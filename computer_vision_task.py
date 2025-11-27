@@ -1,0 +1,85 @@
+import cv2
+import asyncio
+from ultralytics import YOLO
+
+import config
+from global_state import data_store, data_lock
+from websocket_manager import ConnectionManager
+
+def run_cv_loop(manager: ConnectionManager, main_loop: asyncio.AbstractEventLoop):
+    """
+    Function running in Thread for video processing
+    
+    Args:
+        manager (ConnectionManager): Instacne of Manager use for broadcast
+        main_loop (asyncio.AbstractEventLoop): Event loop of FastAPI
+    """
+
+    print("INFO:     CV Thread: Initializing model...")
+    model = YOLO(config.MODEL_PATH, task='detect')
+    cap = cv2.VideoCapture(config.VIDEO_SOURCE)
+
+    if not cap.isOpened():
+        print(f"INFO:     CV Thread: Error opening video source {config.VIDEO_SOURCE}")
+        return
+
+    frame_idx, stable_count, stable_count_ema, smoothing = 0, 0, 0.0, config.SMOOTHING_FACTOR
+
+    print("INFO:     CV Thread: Starting loop...")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("INFO:     CV Thread: Cannot read a frame from camera. Exiting.")
+            break
+
+        # --- Model Tracking ---
+        results = model.track(
+            source=frame,
+            persist=True,
+            classes=config.CLASSES_TO_DETECT,
+            device=0,
+            conf=config.DETECTOR_CONF_THRESHOLD,
+            tracker=config.TRACKER_CONFIG_PATH,
+            agnostic_nms=False,
+            verbose=False,
+        )
+
+        boxes = results[0].boxes
+
+        if boxes.id is not None:
+            stable_count = len(boxes.id)
+        else:
+            stable_count = 0
+
+        stable_count_ema = smoothing * stable_count + (1 - smoothing) * stable_count_ema
+
+        annotated_frame = results[0].plot()
+
+        # --- Encode Frame ---
+        ret, buffer = cv2.imencode('.jpg', annotated_frame)
+        if not ret:
+            print("INFO:     CV Thread: Failed to encode frame.")
+            continue
+        
+        frame_bytes = buffer.tobytes()
+
+        # --- Update Shared Data (with Lock) ---
+        data_to_broadcast = {}
+
+        with data_lock:
+            data_store["count"] = stable_count
+            data_store["ema"] = round(stable_count_ema, 2)
+            data_store["frame"] = frame_bytes
+            data_to_broadcast = data_store.copy() # Copy from global data_store
+
+        # --- Broadcast Data (Thread-safe) ---
+        # Create Corutine Object
+        broadcast_task = manager.broadcast_json(data_to_broadcast)
+        
+        # Make this coroutine run on Event Loop of Main Thread (FastAPI)
+        asyncio.run_coroutine_threadsafe(broadcast_task, main_loop)
+
+        frame_idx += 1
+
+    print("INFO:     CV Thread: Releasing resources.")
+    cap.release()
