@@ -1,12 +1,15 @@
 import cv2
-import asyncio
+import json
 from ultralytics import YOLO
-
+import paho.mqtt.client as mqtt
 import config
 from global_state import data_store, data_lock
-from websocket_manager import ConnectionManager
 
-def run_cv_loop(manager: ConnectionManager, main_loop: asyncio.AbstractEventLoop):
+# --- MQTT Setup ---
+mqtt_client = mqtt.Client()
+mqtt_topic = f"classroom/{config.DEVICE_ID}/data" # แยก topic ตาม ID ของ Jetson
+
+def run_cv_loop():
     """
     Function running in Thread for video processing
     
@@ -14,6 +17,12 @@ def run_cv_loop(manager: ConnectionManager, main_loop: asyncio.AbstractEventLoop
         manager (ConnectionManager): Instacne of Manager use for broadcast
         main_loop (asyncio.AbstractEventLoop): Event loop of FastAPI
     """
+    try:
+        mqtt_client.connect(config.MQTT_BROKER_IP, config.MQTT_PORT, 60)
+        mqtt_client.loop_start() # รัน background thread สำหรับ MQTT
+        print(f"INFO:     MQTT Connected to {config.MQTT_BROKER_IP}")
+    except Exception as e:
+        print(f"ERROR:    MQTT Connection failed: {e}")
 
     print("INFO:     CV Thread: Initializing model...")
     model = YOLO(config.MODEL_PATH, task='detect')
@@ -63,21 +72,20 @@ def run_cv_loop(manager: ConnectionManager, main_loop: asyncio.AbstractEventLoop
         
         frame_bytes = buffer.tobytes()
 
-        # --- Update Shared Data (with Lock) ---
-        data_to_broadcast = {}
-
         with data_lock:
             data_store["count"] = stable_count
             data_store["ema"] = round(stable_count_ema, 2)
             data_store["frame"] = frame_bytes
-            data_to_broadcast = data_store.copy() # Copy from global data_store
-
-        # --- Broadcast Data (Thread-safe) ---
-        # Create Corutine Object
-        broadcast_task = manager.broadcast_json(data_to_broadcast)
         
-        # Make this coroutine run on Event Loop of Main Thread (FastAPI)
-        asyncio.run_coroutine_threadsafe(broadcast_task, main_loop)
+        # --- MQTT Publish (ส่วนที่เปลี่ยนใหม่) ---
+        payload = {
+            "device_id": config.DEVICE_ID,
+            "count": stable_count,
+            "ema": round(stable_count_ema, 2)
+        }
+
+        if frame_idx % 30 == 0: 
+            mqtt_client.publish(mqtt_topic, json.dumps(payload))
 
         frame_idx += 1
 

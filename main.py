@@ -1,9 +1,8 @@
 import uvicorn
-import asyncio
 import threading
 
 # Import the app and manager from our setup file
-from setup import app, manager
+from setup import app
 
 # Import config for host/port and the cv_loop function
 import config
@@ -23,14 +22,11 @@ async def startup_event():
     """
     print("INFO:     FastAPI: Startup event triggered.")
     
-    # Get the main asyncio event loop
-    main_loop = asyncio.get_running_loop()
     
     # Start the CV thread
     print("INFO:     FastAPI: Starting CV thread...")
     cv_thread = threading.Thread(
         target=run_cv_loop,        # Function to run
-        args=(manager, main_loop), # Arguments for the function
         daemon=True                # Stop thread when main app stops
     )
     cv_thread.start()
