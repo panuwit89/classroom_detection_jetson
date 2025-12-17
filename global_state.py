@@ -1,9 +1,6 @@
 import threading
 
-# Global data store
 data_store = {
-    "count": 0,
-    "ema": 0.0,
     "frame": None
 }
 

@@ -5,21 +5,16 @@ import paho.mqtt.client as mqtt
 import config
 from global_state import data_store, data_lock
 
-# --- MQTT Setup ---
 mqtt_client = mqtt.Client()
-mqtt_topic = f"classroom/{config.DEVICE_ID}/data" # แยก topic ตาม ID ของ Jetson
+mqtt_topic = f"classroom/{config.DEVICE_ID}/data"
 
 def run_cv_loop():
     """
     Function running in Thread for video processing
-    
-    Args:
-        manager (ConnectionManager): Instacne of Manager use for broadcast
-        main_loop (asyncio.AbstractEventLoop): Event loop of FastAPI
     """
     try:
         mqtt_client.connect(config.MQTT_BROKER_IP, config.MQTT_PORT, 60)
-        mqtt_client.loop_start() # รัน background thread สำหรับ MQTT
+        mqtt_client.loop_start()
         print(f"INFO:     MQTT Connected to {config.MQTT_BROKER_IP}")
     except Exception as e:
         print(f"ERROR:    MQTT Connection failed: {e}")
@@ -41,7 +36,6 @@ def run_cv_loop():
             print("INFO:     CV Thread: Cannot read a frame from camera. Exiting.")
             break
 
-        # --- Model Tracking ---
         results = model.track(
             source=frame,
             persist=True,
@@ -64,7 +58,6 @@ def run_cv_loop():
 
         annotated_frame = results[0].plot()
 
-        # --- Encode Frame ---
         ret, buffer = cv2.imencode('.jpg', annotated_frame)
         if not ret:
             print("INFO:     CV Thread: Failed to encode frame.")
@@ -73,11 +66,8 @@ def run_cv_loop():
         frame_bytes = buffer.tobytes()
 
         with data_lock:
-            data_store["count"] = stable_count
-            data_store["ema"] = round(stable_count_ema, 2)
             data_store["frame"] = frame_bytes
         
-        # --- MQTT Publish (ส่วนที่เปลี่ยนใหม่) ---
         payload = {
             "device_id": config.DEVICE_ID,
             "count": stable_count,

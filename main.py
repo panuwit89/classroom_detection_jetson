@@ -1,37 +1,23 @@
 import uvicorn
 import threading
-
-# Import the app and manager from our setup file
 from setup import app
-
-# Import config for host/port and the cv_loop function
 import config
 from computer_vision_task import run_cv_loop
-
-# --- IMPORTANT ---
-# Import the routes file. Python will execute the file,
-# which registers all the @app.get/websocket decorators.
 import route
 
-# --- Startup Event ---
 @app.on_event("startup")
 async def startup_event():
     """
     Defines the actions to take when the FastAPI server starts up.
-    This will start the separate Computer Vision thread.
     """
     print("INFO:     FastAPI: Startup event triggered.")
-    
-    
-    # Start the CV thread
     print("INFO:     FastAPI: Starting CV thread...")
     cv_thread = threading.Thread(
-        target=run_cv_loop,        # Function to run
-        daemon=True                # Stop thread when main app stops
+        target=run_cv_loop, # Main function
+        daemon=True # Stop thread when main app stops
     )
     cv_thread.start()
 
-# --- Main Execution ---
 if __name__ == "__main__":
     print(f"INFO:     Starting FastAPI server on {config.SERVER_HOST}:{config.SERVER_PORT}")
     uvicorn.run(
