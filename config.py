@@ -11,5 +11,5 @@ PATIENCE_SECONDS = 3      # Keep object id for this patience time
 SMOOTHING_FACTOR = 0.05    # for Exponential Moving Average (EMA)
 
 DEVICE_ID = "room_101"
-MQTT_BROKER_IP = "10.32.49.147" # IP Laptop (Server IP)
+MQTT_BROKER_IP = "172.20.10.7" # IP Laptop (Server IP)
 MQTT_PORT = 1883
